@@ -1,0 +1,9 @@
+pandas
+streamlit
+openai
+langchain[all]
+python-dotenv
+datetime
+langchain-experimental
+openpyxl
+tabulate
