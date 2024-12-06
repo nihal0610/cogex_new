@@ -56,7 +56,7 @@ def main():
  
         submit_button.click(analyze_project, inputs=[openai_api_key, uploaded_file, project_type, date_type, days, days_type, comparison], outputs=[output_text, output_df])
  
-    demo.launch()
+    demo.launch(share=True)
  
 if __name__ == "__main__":
     main()
