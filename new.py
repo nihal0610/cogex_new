@@ -53,10 +53,10 @@ def process_file(api_key, uploaded_file, user_prompt):
         df = df.fillna("NULL")
 
         connection = pymysql.connect(
-            host="localhost",
-            user="root",
-            password="chotu0610",
-            database="genai"
+            host="sql300.infinityfree.com",
+            user="if0_37935898",
+            password="Chotu0610",
+            database="if0_37935898_genai"
         )
         cursor = connection.cursor()
 
