@@ -9,3 +9,4 @@ openpyxl
 tabulate
 pymysql
 mysql-connector-python
+pymongo[srv]
