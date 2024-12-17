@@ -7,4 +7,5 @@ datetime
 langchain-experimental
 openpyxl
 tabulate
-gradio
+pymysql
+mysql-connector-python
