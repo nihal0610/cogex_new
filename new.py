@@ -1,14 +1,7 @@
 import streamlit as st
 import openai
 import pandas as pd
-import pymysql
-from mysql.connector import Error
-
-def fetch_table_schema(cursor, table_name):
-    cursor.execute(f"DESCRIBE {table_name}")
-    schema = cursor.fetchall()
-    column_names = [col[0] for col in schema]
-    return column_names
+from pymongo import MongoClient
 
 def generate_sql_query(user_prompt, column_names):
     try:
@@ -17,11 +10,11 @@ def generate_sql_query(user_prompt, column_names):
 
         system_message = (
             "You are an expert SQL generator. "
-            "You should only generate code that is supported in MySQL. "
-            "Create only SQL SELECT queries based on the given description. "
+            "You should only generate code that is supported in MongoDB. "
+            "Create only MongoDB queries based on the given description. "
             "The table always uses the name 'utilisation'. "
             "Only use the column names provided in the schema. "
-            "Do not insert the SQL query as commented code. "
+            "Do not insert the MongoDB query as commented code. "
         )
         messages = [
             {"role": "system", "content": system_message},
@@ -35,10 +28,10 @@ def generate_sql_query(user_prompt, column_names):
             max_tokens=200
         )
 
-        sql_query = response.choices[0].message.content.strip()
-        return sql_query
+        query = response.choices[0].message.content.strip()
+        return query
     except Exception as e:
-        return f"Error generating SQL query: {str(e)}"
+        return f"Error generating MongoDB query: {str(e)}"
 
 def process_file(api_key, uploaded_file, user_prompt):
     try:
@@ -52,59 +45,48 @@ def process_file(api_key, uploaded_file, user_prompt):
         df.columns = [col.strip().replace("  ", "").replace(" / ", "").replace("-", "").replace(" ", "") for col in df.columns]
         df = df.fillna("NULL")
 
-        connection = pymysql.connect(
-            host="sql300.infinityfree.com",
-            user="if0_37935898",
-            password="Chotu0610",
-            database="if0_37935898_genai"
-        )
-        cursor = connection.cursor()
+        # MongoDB connection
+        uri = "mongodb+srv://nihalk0610:chotu0610@cluster0.wq12b.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+        client = MongoClient(uri)
+        db = client['your_database_name']
+        collection = db['utilisation']
 
-        table_name = "utilisation"
-        cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+        # Drop collection if it exists
+        collection.drop()
 
-        create_table_query = f"""
-        CREATE TABLE {table_name} (
-            {', '.join([f'`{col}` TEXT' for col in df.columns])}
-        );
-        """
-        cursor.execute(create_table_query)
-
-        for _, row in df.iterrows():
-            insert_query = f"INSERT INTO {table_name} VALUES ({', '.join(['%s'] * len(row))})"
-            cursor.execute(insert_query, tuple(row))
-        connection.commit()
+        # Insert data into MongoDB
+        data = df.to_dict(orient='records')
+        collection.insert_many(data)
 
         column_names = df.columns.tolist()
-        sql_query = generate_sql_query(user_prompt, column_names)
+        query = generate_sql_query(user_prompt, column_names)
 
-        cursor.execute(sql_query)
-        result = cursor.fetchall()
+        # Execute query and fetch results
+        result = collection.find(query)
+        result_df = pd.DataFrame(list(result))
 
-        cursor.close()
-        connection.close()
+        client.close()
 
-        if result:
-            result_df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
-            return sql_query, result_df
+        if not result_df.empty:
+            return query, result_df
         else:
-            return sql_query, "No results found."
-    except Error as e:
+            return query, "No results found."
+    except Exception as e:
         return f"Error: {e}", None
 
 def main():
-    st.title("SQL Query Generator")
-    st.write("Provide your OpenAI API key, upload an Excel file, and enter a description to generate an SQL SELECT query using GPT-3.5 Turbo.")
+    st.title("MongoDB Query Generator")
+    st.write("Provide your OpenAI API key, upload an Excel file, and enter a description to generate a MongoDB query using GPT-3.5 Turbo.")
 
     api_key = st.text_input("OpenAI API Key", type="password")
     uploaded_file = st.file_uploader("Upload your Excel file")
-    user_prompt = st.text_input("Describe the SQL query you need")
+    user_prompt = st.text_input("Describe the MongoDB query you need")
 
     if api_key and uploaded_file and user_prompt:
-        sql_query, result = process_file(api_key, uploaded_file, user_prompt)
+        query, result = process_file(api_key, uploaded_file, user_prompt)
 
-        st.write("### Generated SQL Query")
-        st.code(sql_query)
+        st.write("### Generated MongoDB Query")
+        st.code(query)
 
         if isinstance(result, pd.DataFrame):
             st.write("### Query Results")
