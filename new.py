@@ -1,62 +1,117 @@
+import streamlit as st
+import openai
 import pandas as pd
-import gradio as gr
-from openai import AzureOpenAI
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
-from langchain.chat_models import ChatOpenAI
-from datetime import datetime
- 
-def analyze_project(openai_api_key, uploaded_file, project_type, date_type, days, days_type, comparison):
-    if not openai_api_key:
-        return "Please enter your OpenAI API key.", None
- 
-    if uploaded_file is None:
-        return "Please upload your Excel file.", None
- 
-    ddf = pd.read_excel(uploaded_file)
-    llm = ChatOpenAI(
-        openai_api_key=openai_api_key,
-        temperature=0,
-        max_tokens=4000,
-        model_name="gpt-3.5-turbo-16k"
-    )
- 
-    ddf['ProjectEnddate2'] = pd.to_datetime(ddf['ProjectEnddate'])
-    ddf['Days_Remaining'] = (ddf['ProjectEnddate2'] - datetime.now()).dt.days
-    ddf['ProjectStartdate1'] = pd.to_datetime(ddf['ProjectStartdate'])
-    ddf['Days_passed'] = (datetime.now() - ddf['ProjectStartdate1']).dt.days
- 
-    input_query = f"Give me IDs of all managers in a list format, whose days_{days_type} from {date_type} is {comparison} {days} and project type is {project_type}"
-    agent = create_pandas_dataframe_agent(llm, ddf, verbose=False, allow_dangerous_code=True, full_output=False, max_iterations=100)
-    result1 = agent.invoke(input_query)
-    value = result1['output']
- 
-    if isinstance(value, str):
-        value = value.strip('[]').split(', ')
-        value = [v.strip("'") for v in value]
-        value = [int(v) for v in value]
- 
-    filtered_df = ddf[ddf["Manager ID"].isin(value)][["Manager ID", "Project Name", "Project Id"]]
-    return "Result:", filtered_df
- 
+import pymysql
+from mysql.connector import Error
+
+def fetch_table_schema(cursor, table_name):
+    cursor.execute(f"DESCRIBE {table_name}")
+    schema = cursor.fetchall()
+    column_names = [col[0] for col in schema]
+    return column_names
+
+def generate_sql_query(user_prompt, column_names):
+    try:
+        columns_description = ", ".join(column_names)
+        schema_info = f"The table 'utilisation' has the following columns: {columns_description}."
+
+        system_message = (
+            "You are an expert SQL generator. "
+            "You should only generate code that is supported in MySQL. "
+            "Create only SQL SELECT queries based on the given description. "
+            "The table always uses the name 'utilisation'. "
+            "Only use the column names provided in the schema. "
+            "Do not insert the SQL query as commented code. "
+        )
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": f"{schema_info}\n\n{user_prompt}"}
+        ]
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0,
+            max_tokens=200
+        )
+
+        sql_query = response.choices[0].message.content.strip()
+        return sql_query
+    except Exception as e:
+        return f"Error generating SQL query: {str(e)}"
+
+def process_file(api_key, uploaded_file, user_prompt):
+    try:
+        openai.api_key = api_key
+        df = pd.read_excel(uploaded_file)
+        date_cols = ['ProjectEnddate', 'ProjectStartdate', 'AllocationStartDate', 'AllocationEndDate']
+        for date_column in date_cols:
+            if date_column in df.columns:
+                df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
+
+        df.columns = [col.strip().replace("  ", "").replace(" / ", "").replace("-", "").replace(" ", "") for col in df.columns]
+        df = df.fillna("NULL")
+
+        connection = pymysql.connect(
+            host="localhost",
+            user="root",
+            password="chotu0610",
+            database="genai"
+        )
+        cursor = connection.cursor()
+
+        table_name = "utilisation"
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+
+        create_table_query = f"""
+        CREATE TABLE {table_name} (
+            {', '.join([f'`{col}` TEXT' for col in df.columns])}
+        );
+        """
+        cursor.execute(create_table_query)
+
+        for _, row in df.iterrows():
+            insert_query = f"INSERT INTO {table_name} VALUES ({', '.join(['%s'] * len(row))})"
+            cursor.execute(insert_query, tuple(row))
+        connection.commit()
+
+        column_names = df.columns.tolist()
+        sql_query = generate_sql_query(user_prompt, column_names)
+
+        cursor.execute(sql_query)
+        result = cursor.fetchall()
+
+        cursor.close()
+        connection.close()
+
+        if result:
+            result_df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+            return sql_query, result_df
+        else:
+            return sql_query, "No results found."
+    except Error as e:
+        return f"Error: {e}", None
+
 def main():
-    with gr.Blocks() as demo:
-        gr.Markdown("# Manager Project Analysis")
- 
-        openai_api_key = gr.Textbox(label="Enter your OpenAI API key", type="password")
-        uploaded_file = gr.File(label="Upload your Excel file")
-        project_type = gr.Dropdown(label="Please select one project type", choices=['MGMNT','EXTN','SALES','PDP','INFRA','TCE','CRPIT','DMGMT','INVMT','CORP','RCMNT','BENCH','EXANT','MKTAL','OPS','CAPEX','UAMCP','ELT','GGMS','PRDCG'])
-        date_type = gr.Dropdown(label="Please select from which Project date you want to calculate days", choices=['Project start date','Project end date'])
-        days = gr.Textbox(label="Please enter the days")
-        days_type = gr.Dropdown(label="Please select the days passed from the date or remaining to the date", choices=['Passed','Remaining'])
-        comparison = gr.Dropdown(label="Please select either you want the results to be equal, greater or less than the amount of days you specify", choices=['Equal to','Greater than','Less than'])
-        submit_button = gr.Button("Submit")
- 
-        output_text = gr.Textbox(label="Result")
-        output_df = gr.DataFrame(label="Filtered Data")
- 
-        submit_button.click(analyze_project, inputs=[openai_api_key, uploaded_file, project_type, date_type, days, days_type, comparison], outputs=[output_text, output_df])
- 
-    demo.launch(share=True)
- 
+    st.title("SQL Query Generator")
+    st.write("Provide your OpenAI API key, upload an Excel file, and enter a description to generate an SQL SELECT query using GPT-3.5 Turbo.")
+
+    api_key = st.text_input("OpenAI API Key", type="password")
+    uploaded_file = st.file_uploader("Upload your Excel file")
+    user_prompt = st.text_input("Describe the SQL query you need")
+
+    if api_key and uploaded_file and user_prompt:
+        sql_query, result = process_file(api_key, uploaded_file, user_prompt)
+
+        st.write("### Generated SQL Query")
+        st.code(sql_query)
+
+        if isinstance(result, pd.DataFrame):
+            st.write("### Query Results")
+            st.dataframe(result)
+        else:
+            st.write("### Query Results")
+            st.write(result)
+
 if __name__ == "__main__":
     main()
