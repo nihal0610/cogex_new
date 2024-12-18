@@ -46,10 +46,10 @@ def process_file(api_key, uploaded_file, user_prompt):
         df = df.fillna("NULL")
 
         # Azure SQL Database connection
-        server = 'your_server.database.windows.net'
-        database = 'your_database'
-        username = 'your_username'
-        password = 'your_password'
+        server = 'cogex-genai.mysql.database.azure.com'
+        database = 'cogex-genai
+        username = 'nihal0610'
+        password = 'Chotu@0610'
         driver = '{ODBC Driver 17 for SQL Server}'
         connection_string = f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={database};UID={username};PWD={password}'
         conn = pyodbc.connect(connection_string)
