@@ -49,7 +49,7 @@ def process_file(api_key, uploaded_file, user_prompt):
         uri = "mongodb+srv://nihalk0610:chotu0610@cluster0.ldao3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
         client = MongoClient(uri)
         db = client['genai_db']
-        collection = db['sheet1']
+        collection = db['utilisation']
 
         # Drop collection if it exists
         collection.drop()
