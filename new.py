@@ -1,18 +1,18 @@
 import streamlit as st
 import openai
 import pandas as pd
-from pymongo import MongoClient
+import pyodbc
 import json
 
-def generate_mongo_query(user_prompt, column_names):
+def generate_sql_query(user_prompt, table_name, column_names):
     try:
         columns_description = ", ".join(column_names)
-        schema_info = f"The collection 'utilisation' has the following columns: {columns_description}."
+        schema_info = f"The table '{table_name}' has the following columns: {columns_description}."
 
         system_message = (
             "You are an expert query generator. "
-            "Create MongoDB queries based on the given description. "
-            "The collection always uses the name 'utilisation'. "
+            "Create SQL queries based on the given description. "
+            "The table always uses the name '{table_name}'. "
             "Only use the column names provided in the schema. "
             "Do not insert the query as commented code. "
         )
@@ -31,7 +31,7 @@ def generate_mongo_query(user_prompt, column_names):
         query = response.choices[0].message.content.strip()
         return query
     except Exception as e:
-        return f"Error generating MongoDB query: {str(e)}"
+        return f"Error generating SQL query: {str(e)}"
 
 def process_file(api_key, uploaded_file, user_prompt):
     try:
@@ -45,37 +45,40 @@ def process_file(api_key, uploaded_file, user_prompt):
         df.columns = [col.strip().replace("  ", "").replace(" / ", "").replace("-", "").replace(" ", "") for col in df.columns]
         df = df.fillna("NULL")
 
-        # MongoDB connection
-        uri = "mongodb+srv://nihalk0610:chotu0610@cluster0.ldao3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-        client = MongoClient(uri)
-        db = client['genai_db']
-        collection = db['utilisation']
+        # Azure SQL Database connection
+        server = 'your_server.database.windows.net'
+        database = 'your_database'
+        username = 'your_username'
+        password = 'your_password'
+        driver = '{ODBC Driver 17 for SQL Server}'
+        connection_string = f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={database};UID={username};PWD={password}'
+        conn = pyodbc.connect(connection_string)
+        cursor = conn.cursor()
 
-        # Drop collection if it exists
-        collection.drop()
+        # Drop table if it exists
+        table_name = 'utilisation'
+        cursor.execute(f"IF OBJECT_ID('{table_name}', 'U') IS NOT NULL DROP TABLE {table_name}")
 
-        # Insert data into MongoDB
-        data = df.to_dict(orient='records')
-        collection.insert_many(data)
+        # Create table based on the DataFrame
+        create_table_query = f"CREATE TABLE {table_name} ({', '.join([f'{col} NVARCHAR(MAX)' for col in df.columns])})"
+        cursor.execute(create_table_query)
+        conn.commit()
+
+        # Insert data into Azure SQL Database
+        insert_query = f"INSERT INTO {table_name} ({', '.join(df.columns)}) VALUES ({', '.join(['?' for _ in df.columns])})"
+        for _, row in df.iterrows():
+            cursor.execute(insert_query, tuple(row))
+        conn.commit()
 
         column_names = df.columns.tolist()
-        query = generate_mongo_query(user_prompt, column_names)
-
-        # Ensure query is in JSON format
-        try:
-            filter_query = json.loads(query)
-        except json.JSONDecodeError as json_error:
-            return f"Error parsing generated query: {json_error}", None
-
-        # Check if filter_query is a valid dictionary
-        if not isinstance(filter_query, dict):
-            return "Generated query is not a valid MongoDB filter.", None
+        query = generate_sql_query(user_prompt, table_name, column_names)
 
         # Execute query and fetch results
-        result = collection.find(filter_query)
-        result_df = pd.DataFrame(list(result))
+        cursor.execute(query)
+        columns = [column[0] for column in cursor.description]
+        result_df = pd.DataFrame(cursor.fetchall(), columns=columns)
 
-        client.close()
+        conn.close()
 
         if not result_df.empty:
             return query, result_df
@@ -85,17 +88,17 @@ def process_file(api_key, uploaded_file, user_prompt):
         return f"Error: {e}", None
 
 def main():
-    st.title("MongoDB Query Generator")
-    st.write("Provide your OpenAI API key, upload an Excel file, and enter a description to generate a MongoDB query using GPT-3.5 Turbo.")
+    st.title("Azure SQL Database Query Generator")
+    st.write("Provide your OpenAI API key, upload an Excel file, and enter a description to generate a SQL query using GPT-3.5 Turbo.")
 
     api_key = st.text_input("OpenAI API Key", type="password")
     uploaded_file = st.file_uploader("Upload your Excel file")
-    user_prompt = st.text_input("Describe the MongoDB query you need")
+    user_prompt = st.text_input("Describe the SQL query you need")
 
     if api_key and uploaded_file and user_prompt:
         query, result = process_file(api_key, uploaded_file, user_prompt)
 
-        st.write("### Generated MongoDB Query")
+        st.write("### Generated SQL Query")
         st.code(query)
 
         if isinstance(result, pd.DataFrame):
