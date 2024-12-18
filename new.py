@@ -46,7 +46,7 @@ def process_file(api_key, uploaded_file, user_prompt):
         df = df.fillna("NULL")
 
         # MongoDB connection
-        uri = "mongodb+srv://nihalk0610:chotu0610@cluster0.wq12b.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+        uri = "mongodb+srv://nihalk0610:chotu0610@cluster0.ldao3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
         client = MongoClient(uri)
         db = client['your_database_name']
         collection = db['utilisation']
