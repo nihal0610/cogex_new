@@ -46,7 +46,7 @@ def process_file(api_key, uploaded_file, user_prompt):
         df = df.fillna("NULL")
 
         # Azure SQL Database connection
-        server = 'cogex-genai.mysql.database.azure.com'
+        server = 'nihal-1.mysql.database.azure.com'
         database = 'cogex-genai'
         username = 'nihal0610'
         password = 'Chotu@0610'
