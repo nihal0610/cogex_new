@@ -3,18 +3,17 @@ import openai
 import pandas as pd
 from pymongo import MongoClient
 
-def generate_sql_query(user_prompt, column_names):
+def generate_mongo_query(user_prompt, column_names):
     try:
         columns_description = ", ".join(column_names)
-        schema_info = f"The table 'utilisation' has the following columns: {columns_description}."
+        schema_info = f"The collection 'utilisation' has the following columns: {columns_description}."
 
         system_message = (
-            "You are an expert SQL generator. "
-            "You should only generate code that is supported in MongoDB. "
-            "Create only MongoDB queries based on the given description. "
-            "The table always uses the name 'utilisation'. "
+            "You are an expert query generator. "
+            "Create MongoDB queries based on the given description. "
+            "The collection always uses the name 'utilisation'. "
             "Only use the column names provided in the schema. "
-            "Do not insert the MongoDB query as commented code. "
+            "Do not insert the query as commented code. "
         )
         messages = [
             {"role": "system", "content": system_message},
@@ -59,10 +58,15 @@ def process_file(api_key, uploaded_file, user_prompt):
         collection.insert_many(data)
 
         column_names = df.columns.tolist()
-        query = generate_sql_query(user_prompt, column_names)
+        query = generate_mongo_query(user_prompt, column_names)
+
+        # Ensure query is a dictionary
+        filter_query = eval(query)  # Be cautious with eval, use only if you trust the input
+        if not isinstance(filter_query, dict):
+            return "Generated query is not a valid MongoDB filter.", None
 
         # Execute query and fetch results
-        result = collection.find(query)
+        result = collection.find(filter_query)
         result_df = pd.DataFrame(list(result))
 
         client.close()
