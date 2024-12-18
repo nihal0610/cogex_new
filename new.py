@@ -61,7 +61,11 @@ def process_file(api_key, uploaded_file, user_prompt):
         query = generate_mongo_query(user_prompt, column_names)
 
         # Ensure query is a dictionary
-        filter_query = eval(query)  # Be cautious with eval, use only if you trust the input
+        try:
+            filter_query = eval(query)  # Be cautious with eval, use only if you trust the input
+        except Exception as eval_error:
+            return f"Error parsing generated query: {eval_error}", None
+
         if not isinstance(filter_query, dict):
             return "Generated query is not a valid MongoDB filter.", None
 
